@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { supabase } from '../../supabase'; // adjust path if needed
-import { View, Text, Image, ScrollView, TouchableOpacity } from 'react-native';
+import { View, Text, Image, ScrollView, TouchableOpacity, Alert } from 'react-native';
 import { User } from '@supabase/supabase-js';
 import * as WebBrowser from 'expo-web-browser';
 import * as AuthSession from 'expo-auth-session';
@@ -20,27 +20,65 @@ export default function ProfileScreen() {
     const [user, setUser] = useState<User | null>(null);
 
     const signInWithGoogle = async () => {
-      const redirectUri = makeRedirectUri({
-        native: 'ember://login-callback',
-      });
-    
-      const { data, error } = await supabase.auth.signInWithOAuth({
-        provider: 'google',
-        options: {
-          redirectTo: redirectUri,
-        },
-      });
-    
-      if (error) {
-        console.error('OAuth error:', error.message);
-        return;
-      }
-    
-      if (data?.url) {
-        console.log('Opening auth session to:', data.url);
-        await WebBrowser.openAuthSessionAsync(data.url, redirectUri);
-      } else {
-        console.warn('No URL returned from Supabase');
+      try {
+        // First, clear any existing session and cookies
+        await supabase.auth.signOut();
+        
+        // Clear any cached OAuth data
+        await WebBrowser.maybeCompleteAuthSession();
+        
+        const redirectUri = makeRedirectUri({
+          native: 'ember://login-callback',
+        });
+        
+        console.log('🔗 Redirect URI:', redirectUri);
+        
+        const { data, error } = await supabase.auth.signInWithOAuth({
+          provider: 'google',
+          options: {
+            redirectTo: redirectUri,
+            skipBrowserRedirect: true,
+            queryParams: {
+              prompt: 'select_account',
+              access_type: 'offline',
+            },
+          },
+        });
+        
+        if (error) {
+          console.error('❌ OAuth error:', error.message);
+          return;
+        }
+        
+        if (data?.url) {
+          console.log('🌐 Opening auth session to:', data.url);
+          const result = await WebBrowser.openAuthSessionAsync(
+            data.url,
+            redirectUri,
+            {
+              showInRecents: true,
+              dismissButtonStyle: 'cancel',
+              presentationStyle: WebBrowser.WebBrowserPresentationStyle.FULL_SCREEN,
+              controlsColor: '#4285F4',
+              toolbarColor: '#FFFFFF',
+            }
+          );
+          
+          if (result.type === 'success') {
+            console.log('✅ Auth session completed successfully');
+            // Fetch the updated session
+            const { data: { session } } = await supabase.auth.getSession();
+            if (session?.user) {
+              setUser(session.user);
+            }
+          } else {
+            console.log('❌ Auth session failed:', result.type);
+          }
+        } else {
+          console.warn('⚠️ No URL returned from Supabase');
+        }
+      } catch (error) {
+        console.error('❌ Sign in error:', error);
       }
     };
 
@@ -49,7 +87,13 @@ export default function ProfileScreen() {
       const { data: { session }, error } = await supabase.auth.getSession();
 
       if (session?.user) {
-        setUser(session.user);
+        // Get user metadata which includes the name from Google
+        const { data: { user }, error: userError } = await supabase.auth.getUser();
+        if (userError) {
+          console.error('Error fetching user data:', userError.message);
+        } else {
+          setUser(user);
+        }
       }
 
       if (error) {
@@ -82,7 +126,7 @@ export default function ProfileScreen() {
       {/* Profile Header */}
       <View style={{ alignItems: 'center', marginBottom: 24 }}>
         <Image
-          source={{ uri: profileImage }}
+          source={{ uri: user?.user_metadata?.avatar_url || profileImage }}
           style={{
             width: 100,
             height: 100,
@@ -92,7 +136,7 @@ export default function ProfileScreen() {
           }}
         />
         <Text style={{ fontSize: 20, fontWeight: 'bold', marginTop: 12 }}>
-          {user ? user.email : 'Your Name'}
+          {user?.user_metadata?.full_name || user?.email || 'Your Name'}
         </Text>
       </View>
 
@@ -145,7 +189,33 @@ export default function ProfileScreen() {
         <Text style={{ color: '#007AFF' }}>✏️ Edit Profile</Text>
       </TouchableOpacity>
 
-      <TouchableOpacity style={{ paddingVertical: 12 }}>
+      <TouchableOpacity 
+        style={{ paddingVertical: 12 }}
+        onPress={() => {
+          Alert.alert(
+            "Log Out",
+            "Are you sure you want to log out?",
+            [
+              {
+                text: "Cancel",
+                style: "cancel"
+              },
+              {
+                text: "Log Out",
+                style: "destructive",
+                onPress: async () => {
+                  const { error } = await supabase.auth.signOut();
+                  if (error) {
+                    console.error('Error signing out:', error.message);
+                  } else {
+                    setUser(null);
+                  }
+                }
+              }
+            ]
+          );
+        }}
+      >
         <Text style={{ color: '#FF3B30' }}>🚪 Log Out</Text>
       </TouchableOpacity>
     </ScrollView>

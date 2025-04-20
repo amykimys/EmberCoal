@@ -15,6 +15,7 @@ import {
   Platform,
   KeyboardAvoidingView,
   ActivityIndicator,
+  Alert,
 } from 'react-native';
 import { Check, ChevronDown, ChevronUp, Plus, X, Calendar, Trash2, Repeat, Menu as MenuIcon } from 'lucide-react-native';
 import BottomSheet from '@gorhom/bottom-sheet';
@@ -559,16 +560,44 @@ export default function TodoScreen() {
   const renderCategory = (category: Category, todayTodos: Todo[]) => {
     const categoryTodos = todayTodos.filter((todo) => todo.categoryId === category.id && !todo.completed);
   
-    
     if (categoryTodos.length === 0) return null;
 
     const isCollapsed = collapsedCategories[category.id];
+
+    const handleDeleteCategory = () => {
+      // Remove all todos in this category
+      setTodos(prev => prev.filter(todo => todo.categoryId !== category.id));
+      // Remove the category
+      setCategories(prev => prev.filter(c => c.id !== category.id));
+      // Remove from collapsed state
+      const newCollapsed = { ...collapsedCategories };
+      delete newCollapsed[category.id];
+      setCollapsedCategories(newCollapsed);
+    };
 
     return (
       <View key={category.id} style={styles.categoryContainer}>
         <TouchableOpacity 
           style={styles.categoryHeader}
           onPress={() => toggleCategoryCollapse(category.id)}
+          onLongPress={() => {
+            Alert.alert(
+              "Delete Category",
+              `Are you sure you want to delete "${category.label}"? This will also delete all tasks in this category.`,
+              [
+                {
+                  text: "Cancel",
+                  style: "cancel"
+                },
+                {
+                  text: "Delete",
+                  style: "destructive",
+                  onPress: handleDeleteCategory
+                }
+              ]
+            );
+          }}
+          delayLongPress={500}
         >
           <Text style={styles.categoryTitle}>{category.label}</Text>
           {isCollapsed ? (
@@ -795,6 +824,37 @@ export default function TodoScreen() {
                           setSelectedCategoryId(category.id);
                           setShowNewCategoryInput(false);
                         }}
+                        onLongPress={() => {
+                          Alert.alert(
+                            "Delete Category",
+                            `Are you sure you want to delete "${category.label}"? This will also delete all tasks in this category.`,
+                            [
+                              {
+                                text: "Cancel",
+                                style: "cancel"
+                              },
+                              {
+                                text: "Delete",
+                                style: "destructive",
+                                onPress: () => {
+                                  // Remove all todos in this category
+                                  setTodos(prev => prev.filter(todo => todo.categoryId !== category.id));
+                                  // Remove the category
+                                  setCategories(prev => prev.filter(c => c.id !== category.id));
+                                  // Clear selected category if it was the deleted one
+                                  if (selectedCategoryId === category.id) {
+                                    setSelectedCategoryId('');
+                                  }
+                                  // Remove from collapsed state
+                                  const newCollapsed = { ...collapsedCategories };
+                                  delete newCollapsed[category.id];
+                                  setCollapsedCategories(newCollapsed);
+                                }
+                              }
+                            ]
+                          );
+                        }}
+                        delayLongPress={500}
                       >
                         <Text style={styles.categoryButtonText}>
                           {category.label.toUpperCase()}
@@ -1028,6 +1088,37 @@ export default function TodoScreen() {
                           }
                           setShowNewCategoryInput(false);
                         }}
+                        onLongPress={() => {
+                          Alert.alert(
+                            "Delete Category",
+                            `Are you sure you want to delete "${category.label}"? This will also delete all tasks in this category.`,
+                            [
+                              {
+                                text: "Cancel",
+                                style: "cancel"
+                              },
+                              {
+                                text: "Delete",
+                                style: "destructive",
+                                onPress: () => {
+                                  // Remove all todos in this category
+                                  setTodos(prev => prev.filter(todo => todo.categoryId !== category.id));
+                                  // Remove the category
+                                  setCategories(prev => prev.filter(c => c.id !== category.id));
+                                  // Clear selected category if it was the deleted one
+                                  if (editingTodo?.categoryId === category.id) {
+                                    setEditingTodo(prev => prev ? { ...prev, categoryId: '' } : null);
+                                  }
+                                  // Remove from collapsed state
+                                  const newCollapsed = { ...collapsedCategories };
+                                  delete newCollapsed[category.id];
+                                  setCollapsedCategories(newCollapsed);
+                                }
+                              }
+                            ]
+                          );
+                        }}
+                        delayLongPress={500}
                       >
                         <Text style={styles.categoryButtonText}>{category.label}</Text>
                       </TouchableOpacity>

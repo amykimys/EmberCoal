@@ -831,6 +831,9 @@ export default function TodoScreen() {
   // Add this test function
   const testDatabaseConnection = async () => {
     try {
+      // Wait for session to be initialized
+      await new Promise(resolve => setTimeout(resolve, 1000));
+      
       // First, verify the session
       const { data: { session }, error: sessionError } = await supabase.auth.getSession();
       console.log('🔐 Session status:', {
@@ -841,13 +844,27 @@ export default function TodoScreen() {
       });
 
       if (!session?.user) {
-        console.log('❌ No active session found');
+        console.log('❌ No active session found. Please sign in first.');
+        return;
+      }
+
+      // Verify the user is authenticated
+      const { data: { user }, error: userError } = await supabase.auth.getUser();
+      console.log('👤 User status:', {
+        isAuthenticated: !!user,
+        email: user?.email,
+        id: user?.id,
+        error: userError?.message
+      });
+
+      if (!user) {
+        console.log('❌ User not authenticated');
         return;
       }
 
       console.log('👤 Testing with user:', {
-        email: session.user.email,
-        id: session.user.id
+        email: user.email,
+        id: user.id
       });
 
       // Test categories table
@@ -855,7 +872,7 @@ export default function TodoScreen() {
         id: 'test-category-' + Date.now(),
         label: 'Test Category',
         color: '#FF0000',
-        user_id: session.user.id
+        user_id: user.id
       };
 
       console.log('📝 Attempting to insert category:', testCategory);
@@ -885,7 +902,7 @@ export default function TodoScreen() {
         completed: false,
         category_id: testCategory.id,
         date: new Date().toISOString(),
-        user_id: session.user.id
+        user_id: user.id
       };
 
       console.log('📝 Attempting to insert todo:', testTodo);
@@ -912,7 +929,7 @@ export default function TodoScreen() {
       const { data: categoriesData, error: categoriesError } = await supabase
         .from('categories')
         .select('*')
-        .eq('user_id', session.user.id);
+        .eq('user_id', user.id);
 
       if (categoriesError) {
         console.error('❌ Error fetching categories:', {
@@ -929,7 +946,7 @@ export default function TodoScreen() {
       const { data: todosData, error: todosError } = await supabase
         .from('todos')
         .select('*')
-        .eq('user_id', session.user.id);
+        .eq('user_id', user.id);
 
       if (todosError) {
         console.error('❌ Error fetching todos:', {

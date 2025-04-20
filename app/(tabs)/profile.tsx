@@ -20,65 +20,49 @@ export default function ProfileScreen() {
     const [user, setUser] = useState<User | null>(null);
 
     const signInWithGoogle = async () => {
-      try {
-        // First, clear any existing session and cookies
-        await supabase.auth.signOut();
+      const redirectUri = makeRedirectUri({
+        native: 'ember://login-callback',
+      });
+    
+      const { data, error } = await supabase.auth.signInWithOAuth({
+        provider: 'google',
+        options: {
+          redirectTo: redirectUri,
+        },
+      });
+    
+      if (error) {
+        console.error('OAuth error:', error.message);
+        return;
+      }
+    
+      if (data?.url) {
+        console.log('Opening auth session to:', data.url);
+        const result = await WebBrowser.openAuthSessionAsync(data.url, redirectUri);
         
-        // Clear any cached OAuth data
-        await WebBrowser.maybeCompleteAuthSession();
-        
-        const redirectUri = makeRedirectUri({
-          native: 'ember://login-callback',
-        });
-        
-        console.log('🔗 Redirect URI:', redirectUri);
-        
-        const { data, error } = await supabase.auth.signInWithOAuth({
-          provider: 'google',
-          options: {
-            redirectTo: redirectUri,
-            skipBrowserRedirect: true,
-            queryParams: {
-              prompt: 'select_account',
-              access_type: 'offline',
-            },
-          },
-        });
-        
-        if (error) {
-          console.error('❌ OAuth error:', error.message);
-          return;
-        }
-        
-        if (data?.url) {
-          console.log('🌐 Opening auth session to:', data.url);
-          const result = await WebBrowser.openAuthSessionAsync(
-            data.url,
-            redirectUri,
-            {
-              showInRecents: true,
-              dismissButtonStyle: 'cancel',
-              presentationStyle: WebBrowser.WebBrowserPresentationStyle.FULL_SCREEN,
-              controlsColor: '#4285F4',
-              toolbarColor: '#FFFFFF',
-            }
-          );
+        if (result.type === 'success') {
+          // Get the updated session
+          const { data: { session }, error: sessionError } = await supabase.auth.getSession();
           
-          if (result.type === 'success') {
-            console.log('✅ Auth session completed successfully');
-            // Fetch the updated session
-            const { data: { session } } = await supabase.auth.getSession();
-            if (session?.user) {
-              setUser(session.user);
-            }
-          } else {
-            console.log('❌ Auth session failed:', result.type);
+          if (sessionError) {
+            console.error('Session error:', sessionError.message);
+            return;
           }
-        } else {
-          console.warn('⚠️ No URL returned from Supabase');
+          
+          if (session?.user) {
+            console.log('User data:', {
+              id: session.user.id,
+              email: session.user.email,
+              name: session.user.user_metadata?.full_name,
+              avatar: session.user.user_metadata?.avatar_url,
+              lastSignIn: session.user.last_sign_in_at,
+              createdAt: session.user.created_at
+            });
+            setUser(session.user);
+          }
         }
-      } catch (error) {
-        console.error('❌ Sign in error:', error);
+      } else {
+        console.warn('No URL returned from Supabase');
       }
     };
 

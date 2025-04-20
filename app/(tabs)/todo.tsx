@@ -287,6 +287,23 @@ export default function TodoScreen() {
       };
       setCategories(prev => [...prev, newCategory]);
       finalCategoryId = newCategory.id;
+
+      // Save new category to Supabase if user is logged in
+      const { data: { user } } = await supabase.auth.getUser();
+      if (user) {
+        const { error } = await supabase
+          .from('categories')
+          .insert({
+            id: newCategory.id,
+            label: newCategory.label,
+            color: newCategory.color,
+            user_id: user.id
+          });
+        
+        if (error) {
+          console.error('Error saving category:', error);
+        }
+      }
     }
   
     const newTodoItem: Todo = {
@@ -305,6 +322,31 @@ export default function TodoScreen() {
     
     setTodos(prev => [...prev, newTodoItem]);
     
+    // Save task to Supabase if user is logged in
+    const { data: { user } } = await supabase.auth.getUser();
+    if (user) {
+      const { error } = await supabase
+        .from('todos')
+        .insert({
+          id: newTodoItem.id,
+          text: newTodoItem.text,
+          description: newTodoItem.description,
+          completed: newTodoItem.completed,
+          category_id: newTodoItem.categoryId,
+          date: newTodoItem.date.toISOString(),
+          repeat: newTodoItem.repeat,
+          custom_repeat_frequency: newTodoItem.customRepeatFrequency,
+          custom_repeat_unit: newTodoItem.customRepeatUnit,
+          custom_repeat_week_days: newTodoItem.customRepeatWeekDays,
+          repeat_end_date: newTodoItem.repeatEndDate?.toISOString(),
+          user_id: user.id
+        });
+      
+      if (error) {
+        console.error('Error saving task:', error);
+      }
+    }
+    
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
 
     if (reminderTime) {
@@ -317,7 +359,7 @@ export default function TodoScreen() {
   
   
 
-  const handleEditSave = () => {
+  const handleEditSave = async () => {
     if (editingTodo && newTodo.trim()) {
       const updatedTodo = {
         ...editingTodo,
@@ -344,6 +386,47 @@ export default function TodoScreen() {
           color: newCategoryColor,
         };
         setCategories(prev => [...prev, newCategory]);
+
+        // Save new category to Supabase if user is logged in
+        const { data: { user } } = await supabase.auth.getUser();
+        if (user) {
+          const { error } = await supabase
+            .from('categories')
+            .insert({
+              id: newCategory.id,
+              label: newCategory.label,
+              color: newCategory.color,
+              user_id: user.id
+            });
+          
+          if (error) {
+            console.error('Error saving category:', error);
+          }
+        }
+      }
+
+      // Update task in Supabase if user is logged in
+      const { data: { user } } = await supabase.auth.getUser();
+      if (user) {
+        const { error } = await supabase
+          .from('todos')
+          .update({
+            text: updatedTodo.text,
+            description: updatedTodo.description,
+            category_id: updatedTodo.categoryId,
+            date: updatedTodo.date.toISOString(),
+            repeat: updatedTodo.repeat,
+            custom_repeat_frequency: updatedTodo.customRepeatFrequency,
+            custom_repeat_unit: updatedTodo.customRepeatUnit,
+            custom_repeat_week_days: updatedTodo.customRepeatWeekDays,
+            repeat_end_date: updatedTodo.repeatEndDate?.toISOString(),
+          })
+          .eq('id', updatedTodo.id)
+          .eq('user_id', user.id);
+        
+        if (error) {
+          console.error('Error updating task:', error);
+        }
       }
   
       setEditingTodo(null);
@@ -352,14 +435,27 @@ export default function TodoScreen() {
     }
   };
   
-  const toggleTodo = (id: string) => {
-    setTodos(
-      todos.map(todo =>
-        todo.id === id
-          ? { ...todo, completed: !todo.completed }
-          : todo
-      )
+  const toggleTodo = async (id: string) => {
+    const updatedTodos = todos.map(todo =>
+      todo.id === id
+        ? { ...todo, completed: !todo.completed }
+        : todo
     );
+    setTodos(updatedTodos);
+
+    // Update task in Supabase if user is logged in
+    const { data: { user } } = await supabase.auth.getUser();
+    if (user) {
+      const { error } = await supabase
+        .from('todos')
+        .update({ completed: !todos.find(t => t.id === id)?.completed })
+        .eq('id', id)
+        .eq('user_id', user.id);
+      
+      if (error) {
+        console.error('Error updating task completion:', error);
+      }
+    }
   };
 
   const toggleCategoryCollapse = (categoryId: string) => {
@@ -678,6 +774,184 @@ export default function TodoScreen() {
       </View>
     );
   };
+
+  // Add this new useEffect to handle auth state changes and fetch/save tasks
+  useEffect(() => {
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
+      if (event === 'SIGNED_IN' && session?.user) {
+        // Fetch user's tasks and categories when signed in
+        const { data: tasksData, error: tasksError } = await supabase
+          .from('todos')
+          .select('*')
+          .eq('user_id', session.user.id);
+        
+        if (tasksError) {
+          console.error('Error fetching tasks:', tasksError);
+        } else if (tasksData) {
+          setTodos(tasksData.map(task => ({
+            ...task,
+            date: new Date(task.date),
+            repeatEndDate: task.repeat_end_date ? new Date(task.repeat_end_date) : null,
+          })));
+        }
+
+        const { data: categoriesData, error: categoriesError } = await supabase
+          .from('categories')
+          .select('*')
+          .eq('user_id', session.user.id);
+
+        if (categoriesError) {
+          console.error('Error fetching categories:', categoriesError);
+        } else if (categoriesData) {
+          setCategories(categoriesData);
+        }
+      } else if (event === 'SIGNED_OUT') {
+        // Clear all local state when user signs out
+        setTodos([]);
+        setCategories([]);
+        setNewTodo('');
+        setNewDescription('');
+        setSelectedCategoryId('');
+        setShowNewCategoryInput(false);
+        setNewCategoryName('');
+        setNewCategoryColor('#E3F2FD');
+        setEditingTodo(null);
+        setCollapsedCategories({});
+        setCurrentDate(new Date());
+        setTaskDate(null);
+        setReminderTime(null);
+        setSelectedRepeat('none');
+        setRepeatEndDate(null);
+      }
+    });
+
+    return () => subscription.unsubscribe();
+  }, []);
+
+  // Add this test function
+  const testDatabaseConnection = async () => {
+    try {
+      // First, verify the session
+      const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+      console.log('🔐 Session status:', {
+        hasSession: !!session,
+        userEmail: session?.user?.email,
+        userId: session?.user?.id,
+        error: sessionError?.message
+      });
+
+      if (!session?.user) {
+        console.log('❌ No active session found');
+        return;
+      }
+
+      console.log('👤 Testing with user:', {
+        email: session.user.email,
+        id: session.user.id
+      });
+
+      // Test categories table
+      const testCategory = {
+        id: 'test-category-' + Date.now(),
+        label: 'Test Category',
+        color: '#FF0000',
+        user_id: session.user.id
+      };
+
+      console.log('📝 Attempting to insert category:', testCategory);
+
+      // Insert test category
+      const { data: categoryData, error: categoryError } = await supabase
+        .from('categories')
+        .insert(testCategory)
+        .select();
+
+      if (categoryError) {
+        console.error('❌ Error inserting category:', {
+          message: categoryError.message,
+          details: categoryError.details,
+          hint: categoryError.hint,
+          code: categoryError.code
+        });
+      } else {
+        console.log('✅ Successfully inserted test category:', categoryData);
+      }
+
+      // Test todos table
+      const testTodo = {
+        id: 'test-todo-' + Date.now(),
+        text: 'Test Todo',
+        description: 'This is a test todo',
+        completed: false,
+        category_id: testCategory.id,
+        date: new Date().toISOString(),
+        user_id: session.user.id
+      };
+
+      console.log('📝 Attempting to insert todo:', testTodo);
+
+      // Insert test todo
+      const { data: todoData, error: todoError } = await supabase
+        .from('todos')
+        .insert(testTodo)
+        .select();
+
+      if (todoError) {
+        console.error('❌ Error inserting todo:', {
+          message: todoError.message,
+          details: todoError.details,
+          hint: todoError.hint,
+          code: todoError.code
+        });
+      } else {
+        console.log('✅ Successfully inserted test todo:', todoData);
+      }
+
+      // Fetch and verify data
+      console.log('📋 Fetching categories...');
+      const { data: categoriesData, error: categoriesError } = await supabase
+        .from('categories')
+        .select('*')
+        .eq('user_id', session.user.id);
+
+      if (categoriesError) {
+        console.error('❌ Error fetching categories:', {
+          message: categoriesError.message,
+          details: categoriesError.details,
+          hint: categoriesError.hint,
+          code: categoriesError.code
+        });
+      } else {
+        console.log('📋 Categories:', categoriesData);
+      }
+
+      console.log('📝 Fetching todos...');
+      const { data: todosData, error: todosError } = await supabase
+        .from('todos')
+        .select('*')
+        .eq('user_id', session.user.id);
+
+      if (todosError) {
+        console.error('❌ Error fetching todos:', {
+          message: todosError.message,
+          details: todosError.details,
+          hint: todosError.hint,
+          code: todosError.code
+        });
+      } else {
+        console.log('📝 Todos:', todosData);
+      }
+
+    } catch (error) {
+      console.error('❌ Test failed:', error);
+    }
+  };
+
+  // Add this to your useEffect to run the test when the component mounts
+  useEffect(() => {
+    // Uncomment this line to run the test
+     testDatabaseConnection();
+  }, []);
 
   return (
 

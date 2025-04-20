@@ -20,72 +20,150 @@ export default function ProfileScreen() {
     const [user, setUser] = useState<User | null>(null);
 
     const signInWithGoogle = async () => {
-      const redirectUri = makeRedirectUri({
-        native: 'ember://login-callback',
-      });
-    
-      const { data, error } = await supabase.auth.signInWithOAuth({
-        provider: 'google',
-        options: {
-          redirectTo: redirectUri,
-        },
-      });
-    
-      if (error) {
-        console.error('OAuth error:', error.message);
-        return;
-      }
-    
-      if (data?.url) {
-        console.log('Opening auth session to:', data.url);
-        const result = await WebBrowser.openAuthSessionAsync(data.url, redirectUri);
+      try {
+        // First, clear any existing session
+        await supabase.auth.signOut();
         
-        if (result.type === 'success') {
-          // Get the updated session
-          const { data: { session }, error: sessionError } = await supabase.auth.getSession();
-          
-          if (sessionError) {
-            console.error('Session error:', sessionError.message);
-            return;
-          }
-          
-          if (session?.user) {
-            console.log('User data:', {
-              id: session.user.id,
-              email: session.user.email,
-              name: session.user.user_metadata?.full_name,
-              avatar: session.user.user_metadata?.avatar_url,
-              lastSignIn: session.user.last_sign_in_at,
-              createdAt: session.user.created_at
-            });
-            setUser(session.user);
-          }
+        // Clear any cached OAuth data
+        await WebBrowser.maybeCompleteAuthSession();
+        
+        const redirectUri = makeRedirectUri({
+          native: 'ember://login-callback',
+        });
+        
+        console.log('🔗 Redirect URI:', redirectUri);
+        
+        const { data, error } = await supabase.auth.signInWithOAuth({
+          provider: 'google',
+          options: {
+            redirectTo: redirectUri,
+            skipBrowserRedirect: true,
+            queryParams: {
+              prompt: 'select_account',
+              access_type: 'offline',
+            },
+          },
+        });
+        
+        if (error) {
+          console.error('❌ OAuth error:', error.message);
+          return;
         }
-      } else {
-        console.warn('No URL returned from Supabase');
+        
+        if (data?.url) {
+          console.log('🌐 Opening auth session to:', data.url);
+          const result = await WebBrowser.openAuthSessionAsync(
+            data.url,
+            redirectUri,
+            {
+              showInRecents: true,
+              dismissButtonStyle: 'cancel',
+            }
+          );
+          
+          if (result.type === 'success') {
+            console.log('✅ Auth session completed successfully');
+            
+            // Get the updated session
+            const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+            
+            if (sessionError) {
+              console.error('❌ Session error:', sessionError.message);
+              return;
+            }
+            
+            if (session?.user) {
+              console.log('👤 User session established:', {
+                email: session.user.email,
+                id: session.user.id
+              });
+              
+              // Force a refresh of the user data
+              const { data: { user }, error: userError } = await supabase.auth.getUser();
+              
+              if (userError) {
+                console.error('❌ User data error:', userError.message);
+                return;
+              }
+              
+              if (user) {
+                console.log('👤 User profile data:', {
+                  name: user.user_metadata?.full_name,
+                  email: user.email,
+                  avatar: user.user_metadata?.avatar_url,
+                  raw: user
+                });
+                setUser(user);
+              }
+            }
+          } else {
+            console.log('❌ Auth session failed:', result.type);
+          }
+        } else {
+          console.warn('⚠️ No URL returned from Supabase');
+        }
+      } catch (error) {
+        console.error('❌ Sign in error:', error);
       }
     };
 
   useEffect(() => {
     const fetchSession = async () => {
       const { data: { session }, error } = await supabase.auth.getSession();
+      console.log('🔍 Initial session check:', {
+        hasSession: !!session,
+        email: session?.user?.email
+      });
 
       if (session?.user) {
         // Get user metadata which includes the name from Google
         const { data: { user }, error: userError } = await supabase.auth.getUser();
         if (userError) {
-          console.error('Error fetching user data:', userError.message);
-        } else {
+          console.error('❌ Error fetching user data:', userError.message);
+        } else if (user) {
+          console.log('👤 User profile data:', {
+            name: user.user_metadata?.full_name,
+            email: user.email,
+            avatar: user.user_metadata?.avatar_url,
+            raw: user
+          });
           setUser(user);
         }
       }
 
       if (error) {
-        console.error('Session fetch error:', error.message);
+        console.error('❌ Session fetch error:', error.message);
       }
     };
 
     fetchSession();
+
+    // Listen for auth changes
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
+      console.log('🔄 Auth state changed:', {
+        event,
+        hasSession: !!session,
+        email: session?.user?.email
+      });
+      
+      if (session?.user) {
+        // Force a refresh of the user data
+        const { data: { user } } = await supabase.auth.getUser();
+        if (user) {
+          console.log('👤 Updated user data:', {
+            name: user.user_metadata?.full_name,
+            email: user.email,
+            avatar: user.user_metadata?.avatar_url,
+            raw: user
+          });
+          setUser(user);
+        }
+      } else {
+        setUser(null);
+      }
+    });
+
+    return () => subscription.unsubscribe();
   }, []);
 
   return (

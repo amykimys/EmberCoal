@@ -60,10 +60,7 @@ export default function ProfileScreen() {
           console.log('Session:', session);
           
           if (session?.user) {
-            const { data: { user }, error: userError } = await supabase.auth.getUser();
-            console.log('User error:', userError);
-            console.log('User data:', user);
-            if (user) setUser(user);
+            setUser(session.user);
           }
         }
       }
@@ -87,9 +84,7 @@ export default function ProfileScreen() {
       console.log('Initial session:', session);
       
       if (session?.user) {
-        const { data: { user } } = await supabase.auth.getUser();
-        console.log('Initial user data:', user);
-        if (user) setUser(user);
+        setUser(session.user);
       }
     };
 
@@ -100,11 +95,8 @@ export default function ProfileScreen() {
       console.log('New session:', session);
       
       if (session?.user) {
-        const { data: { user } } = await supabase.auth.getUser();
-        console.log('New user data:', user);
-        if (user) setUser(user);
+        setUser(session.user);
       } else {
-        console.log('No user in session');
         setUser(null);
       }
     });
@@ -155,38 +147,21 @@ export default function ProfileScreen() {
           </View>
 
           <View style={{ marginTop: 32, alignItems: 'center' }}>
-            {!user && (
-              <TouchableOpacity
-                onPress={signInWithGoogle}
-                style={{
-                  backgroundColor: '#4285F4',
-                  paddingVertical: 12,
-                  paddingHorizontal: 24,
-                  borderRadius: 8,
-                  width: '100%',
-                  alignItems: 'center',
-                }}
-              >
-                <Text style={{ color: 'white', fontWeight: '600' }}>Sign in with Google</Text>
-              </TouchableOpacity>
-            )}
-            
-            {user && (
-              <TouchableOpacity
-                onPress={signOut}
-                style={{
-                  backgroundColor: '#FF3B30',
-                  paddingVertical: 12,
-                  paddingHorizontal: 24,
-                  borderRadius: 8,
-                  width: '100%',
-                  alignItems: 'center',
-                  marginTop: 16,
-                }}
-              >
-                <Text style={{ color: 'white', fontWeight: '600' }}>🚪 Log Out</Text>
-              </TouchableOpacity>
-            )}
+            <TouchableOpacity
+              onPress={user ? signOut : signInWithGoogle}
+              style={{
+                backgroundColor: user ? '#FF3B30' : '#4285F4',
+                paddingVertical: 12,
+                paddingHorizontal: 24,
+                borderRadius: 8,
+                width: '100%',
+                alignItems: 'center',
+              }}
+            >
+              <Text style={{ color: 'white', fontWeight: '600' }}>
+                {user ? '🚪 Log Out' : 'Sign in with Google'}
+              </Text>
+            </TouchableOpacity>
           </View>
         </ScrollView>
       </View>
